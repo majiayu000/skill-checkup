@@ -6,11 +6,12 @@ A read-only health report for the agent skills on your machine. It reads your in
 
 - **Broken**: they load but point at missing files, missing commands, or copies that disagree.
 - **Competing**: their descriptions are so similar that they fight over the same requests.
-- **Silent**: you asked for them by name, or for something that matches them closely, and they did not fire.
 - **Heavy**: their descriptions eat the skill-listing budget, so Claude Code drops other skills' descriptions.
 - **Unused**: nothing in your logs touched them in the window.
 
-It also lists requests you keep typing that no skill covers, which are candidates for a new skill.
+It also lists requests you keep typing that no skill covers, which are candidates for a new skill, and points out when an installed skill's body already handles them but its description doesn't say so.
+
+An appendix lists *silent* skills, ones you seemed to ask for that did not fire. That signal is low-confidence (mentions and requests look alike), so it never feeds the summary or the actions.
 
 ```bash
 uvx --from git+https://github.com/majiayu000/skill-checkup skill-checkup
@@ -36,7 +37,7 @@ It prints a short summary and writes the full report to `./skill-checkup-report.
 | Claude Code sessions | `~/.claude/projects/*/*.jsonl` (`$CLAUDE_CONFIG_DIR` respected) |
 | Codex sessions | `~/.codex/sessions/**/*.jsonl` (`$CODEX_HOME` respected) |
 
-Sessions started by programs (`claude -p`, Agent SDK hosts, `codex exec`) count toward usage but are left out of the request analysis, because their "messages" are prompts written by code.
+Claude Code use counts both `Skill` tool calls and an agent opening a skill's `SKILL.md` with the Read tool. Sessions started by programs (`claude -p`, Agent SDK hosts, `codex exec`) count toward usage but are left out of the request analysis, because their "messages" are prompts written by code.
 
 ## Commands
 
@@ -78,7 +79,7 @@ Copy [`skill/SKILL.md`](skill/SKILL.md) into `~/.claude/skills/skill-checkup/` o
 
 ## 中文说明
 
-一个只读的 skill 体检工具：读本机已装的 skill 和 Claude Code / Codex 的会话日志，告诉你哪些 skill 坏了、互相抢触发、该触发却没触发、白占上下文、从没用过，以及有哪些反复手工做、却没有 skill 覆盖的事。
+一个只读的 skill 体检工具：读本机已装的 skill 和 Claude Code / Codex 的会话日志，告诉你哪些 skill 坏了、互相抢触发、白占上下文、从没用过，以及有哪些反复手工做、却没有 skill 覆盖的事。“该触发却没触发”放在低置信附录里，不进摘要和动作清单。
 
 ```bash
 uvx --from git+https://github.com/majiayu000/skill-checkup skill-checkup --lang zh

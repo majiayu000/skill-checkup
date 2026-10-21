@@ -1,6 +1,6 @@
 ---
 name: skill-checkup
-description: Check the health of the agent skills installed on this machine and report which are broken, competing for the same requests, silent (asked for but not fired), heavy on context, or unused. Use when the user asks to check, audit, clean up or tidy their skills, or asks why a skill did not trigger.
+description: Check the health of the agent skills installed on this machine and report which are broken, competing for the same requests, heavy on context, or unused, and which descriptions miss requests their skill already handles. Use when the user asks to check, audit, clean up or tidy their skills, or asks why a skill did not trigger.
 ---
 
 # skill-checkup
