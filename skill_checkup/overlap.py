@@ -43,31 +43,33 @@ def bounded(a: Skill, b: Skill) -> bool:
 
 
 def find(skills: dict[str, Skill], threshold: float = 0.32) -> list[Cluster]:
+    """Complete-link grouping: a skill joins a group only if it is similar to every member, so
+    shared boilerplate cannot chain unrelated skills into one large group."""
     corpus = Corpus({k: doc(s) for k, s in skills.items()})
     keys = corpus.keys
-    parent = {k: k for k in keys}
-
-    def root(k: str) -> str:
-        while parent[k] != k:
-            parent[k] = parent[parent[k]]
-            k = parent[k]
-        return k
-
-    pairs = []
+    sims: dict[frozenset, tuple[str, str, float, list[str]]] = {}
     for i, a in enumerate(keys):
         for b in keys[i + 1 :]:
             sim = corpus.cosine(corpus.vecs[a], corpus.vecs[b])
             if sim >= threshold and not bounded(skills[a], skills[b]):
-                pairs.append((a, b, sim, corpus.shared_terms(corpus.vecs[a], corpus.vecs[b])))
-                parent[root(a)] = root(b)
-    groups: dict[str, list[str]] = {}
-    for k in keys:
-        groups.setdefault(root(k), []).append(k)
-    clusters = []
-    for members in groups.values():
-        if len(members) < 2:
+                sims[frozenset((a, b))] = (a, b, sim, corpus.shared_terms(corpus.vecs[a], corpus.vecs[b]))
+    groups: list[set[str]] = []
+    placed: set[str] = set()
+    for a, b, _, _ in sorted(sims.values(), key=lambda p: -p[2]):
+        if a in placed and b in placed:
             continue
-        ms = set(members)
-        cp = sorted((p for p in pairs if p[0] in ms), key=lambda p: -p[2])
-        clusters.append(Cluster(sorted(members), cp))
-    return sorted(clusters, key=lambda c: -max(p[2] for p in c.pairs))
+        home = next((g for g in groups if (a in g) != (b in g)), None)
+        if home is not None:
+            new = b if a in home else a
+            if all(frozenset((new, m)) in sims for m in home):
+                home.add(new)
+                placed.add(new)
+            continue
+        if a not in placed and b not in placed:
+            groups.append({a, b})
+            placed.update((a, b))
+    clusters = []
+    for g in groups:
+        pairs = sorted((p for k, p in sims.items() if k <= g), key=lambda p: -p[2])
+        clusters.append(Cluster(sorted(g), pairs))
+    return sorted(clusters, key=lambda c: -c.pairs[0][2])

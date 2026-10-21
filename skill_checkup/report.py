@@ -57,7 +57,8 @@ def build(inp: Inputs) -> Result:
     cands = behavior.mine(skills, turns)
 
     claude_budget = next(b for b in budgets if b.runtime == "claude")
-    big_dropped = next(b for b in budget.analyze(skills, uses, inp.budget_chars * 5) if b.runtime == "claude").dropped
+    big_chars = int(1_000_000 * 0.01 * 4)  # the same rule for a 1M-token window
+    big_dropped = next(b for b in budget.analyze(skills, uses, big_chars) if b.runtime == "claude").dropped
     in_cluster = {m for c in clusters for m in c.members}
     archive = sorted(k for k, v in tiers.items() if v == "unused" and k not in in_cluster)
     hi = [f for f in findings if f.kind in HIGH]
@@ -128,7 +129,7 @@ def build(inp: Inputs) -> Result:
         if b.runtime == "claude" and b.dropped:
             line += t("budget_over", over=b.total_chars - b.budget_chars, dropped=len(b.dropped))
         w(line)
-    w(t("budget_big", chars=inp.budget_chars * 5, dropped=len(big_dropped)))
+    w(t("budget_big", chars=big_chars, dropped=len(big_dropped)))
     if claude_budget.dropped:
         w("\n" + t("budget_dropped", ctx=inp.context_tokens,
                    names=", ".join(f"`{e.skill}`" for e in claude_budget.dropped)))

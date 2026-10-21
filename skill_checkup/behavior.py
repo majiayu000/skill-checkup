@@ -8,13 +8,14 @@ from dataclasses import dataclass, field
 
 from .inventory import Skill
 from .overlap import doc
-from .text import Corpus, tokens
+from .text import STOPWORDS, Corpus, tokens
 from .turns import Turn
 from .usage import explicit_only
 
 MISS_THRESHOLD = 0.38
 MINE_THRESHOLD = 0.45
 MINE_MIN_SESSIONS = 5
+COVER_MIN_SHARE = 0.8  # share of the requests' recurring English terms a skill must contain
 _LATIN_TERM_RE = re.compile(r"[a-z][a-z0-9+-]{1,}")
 SNIPPET = 70
 
@@ -132,21 +133,31 @@ class Candidate:
 def _covering_skill(skills: dict[str, Skill], cand: "Candidate") -> tuple[str, float]:
     """Requests often mix languages with a skill body (Chinese ask, English body), which defeats
     TF-IDF. Use the English terms the requests share instead: a skill whose name, description or
-    body contains every one of them (at least two, plural-insensitive) probably handles this."""
+    body contains most of them (at least two terms, plural-insensitive) probably handles this."""
     counts: dict[str, int] = defaultdict(int)
     for t in cand.turns:
         for w in set(_LATIN_TERM_RE.findall(t.text.lower())):
-            counts[w.rstrip("s")] += 1
+            if w not in STOPWORDS:
+                counts[w.rstrip("s")] += 1
     terms = [w for w, n in counts.items() if n >= max(2, len(cand.turns) // 2) and len(w) >= 2]
     if len(terms) < 2:
         return "", 0.0
-    best, best_hits = "", 0
+    best, best_key = "", (0.0, 0)
     for name, s in skills.items():
         text = f"{name} {s.description} {s.body}".lower()
         hits = [len(re.findall(rf"\b{re.escape(w)}s?\b", text)) for w in terms]
-        if all(hits) and sum(hits) > best_hits:  # every term present; most mentions wins
-            best, best_hits = name, sum(hits)
-    return (best, 1.0) if best else ("", 0.0)
+        present = sum(1 for h in hits if h) / len(terms)
+        key = (present, sum(hits))  # most terms present, then most mentions
+        if present >= COVER_MIN_SHARE and key > best_key:
+            best, best_key = name, key
+    return (best, best_key[0]) if best else ("", 0.0)
+
+
+def _described_by(corpus: Corpus, text: str, skill: str, score: float) -> bool:
+    """One shared word ("issues" in an SEO skill) is not coverage; ask for two, or a strong match."""
+    if score >= 0.3:
+        return True
+    return score >= 0.2 and len(corpus.shared_terms(corpus.vector(text), corpus.vecs[skill])) >= 2
 
 
 def mine(skills: dict[str, Skill], turns: list[Turn], min_sessions: int = MINE_MIN_SESSIONS) -> list[Candidate]:
@@ -156,8 +167,8 @@ def mine(skills: dict[str, Skill], turns: list[Turn], min_sessions: int = MINE_M
         if t.skills or t.text.startswith("/") or not _request_text(t.text) or len(tokens(t.text)) < 6:
             continue
         top = skill_corpus.rank(t.text, top=1)
-        if top and top[0][1] >= 0.2:
-            continue  # an existing skill already covers this kind of request
+        if top and _described_by(skill_corpus, t.text, *top[0]):
+            continue  # an existing skill's description already covers this kind of request
         pool.append(t)
     if not pool:
         return []

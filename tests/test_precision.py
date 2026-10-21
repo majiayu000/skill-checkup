@@ -102,3 +102,12 @@ def test_repeated_request_handled_in_a_skill_body_is_reported_as_a_description_g
         turn_list.extend(turns.split(s))
     cands = behavior.mine(skills, turn_list)
     assert cands and cands[0].covered_by == "threads"
+
+
+def test_shared_boilerplate_does_not_chain_unrelated_skills(tmp_path):
+    make_skill(tmp_path, "alpha", "alpha gamma planning rollback")
+    make_skill(tmp_path, "beta", "gamma planning rollback delta")
+    make_skill(tmp_path, "omega", "rollback delta epsilon zeta")
+    skills = inventory.discover([Root("t", tmp_path, BOTH)])
+    groups = [c.members for c in overlap.find(skills, threshold=0.3)]
+    assert all(len(g) == 2 for g in groups), groups
