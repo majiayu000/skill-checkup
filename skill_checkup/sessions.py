@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
-CACHE_VERSION = "v3"
+CACHE_VERSION = "v4"
 
 
 def claude_projects() -> Path:
@@ -141,9 +141,9 @@ def parse_claude(path: Path) -> Session:
             if cmd:
                 name = cmd.group(1).split(":")[-1]
                 args = COMMAND_ARGS_RE.search(text)
+                s.events.append(["user", ts, f"/{name} {args.group(1).strip() if args else ''}".strip()])
                 if name not in BUILTIN_COMMANDS:
                     s.events.append(["skill", ts, name, "slash"])
-                s.events.append(["user", ts, f"/{name} {args.group(1).strip() if args else ''}".strip()])
                 continue
             clean = _clean_user_text(text)
             if clean:
@@ -209,9 +209,9 @@ def parse_codex(path: Path) -> Session:
             if not clean or clean in seen_user:  # old and new formats can both carry the message
                 continue
             seen_user.add(clean)
+            s.events.append(["user", ts, clean[:4000]])
             for name in sorted(set(CODEX_DOLLAR_RE.findall(clean))):
                 s.events.append(["skill", ts, name, "dollar"])
-            s.events.append(["user", ts, clean[:4000]])
     return s
 
 
