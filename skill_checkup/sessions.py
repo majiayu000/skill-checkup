@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
-CACHE_VERSION = "v6"
+CACHE_VERSION = "v7"
 
 
 def claude_projects() -> Path:
@@ -30,7 +30,8 @@ def cache_dir() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
     return Path(base) / "skill-checkup" / CACHE_VERSION
 
-CODEX_SKILL_RE = re.compile(r"skills/([A-Za-z0-9_.:-]+)/SKILL\.md")
+# The folder a SKILL.md was read from, so a "remove this copy" suggestion never targets the copy in use.
+SKILL_READ_RE = re.compile(r"(?:\.(claude|agents|codex)/)?skills/([A-Za-z0-9_.:-]+)/SKILL\.md")
 CLAUDE_SKILL_FILE_RE = re.compile(r"/skills/([A-Za-z0-9_.:-]+)/SKILL\.md$")
 CODEX_DOLLAR_RE = re.compile(r"(?<![\w$])\$([a-z][a-z0-9-]{2,})")
 COMMAND_RE = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
@@ -140,7 +141,7 @@ def parse_claude(path: Path) -> Session:
                         path_arg = (item.get("input") or {}).get("file_path")
                         m = CLAUDE_SKILL_FILE_RE.search(path_arg) if isinstance(path_arg, str) else None
                         if m:
-                            _skill_reads(s, ts, f"skills/{m.group(1)}/SKILL.md", last_read)
+                            _skill_reads(s, ts, path_arg, last_read)
                 continue
             if d.get("type") != "user" or d.get("isMeta"):
                 continue
@@ -236,13 +237,16 @@ def parse_codex(path: Path) -> Session:
 
 def _skill_reads(s: Session, ts: str, text: str, last_read: dict[str, datetime]) -> None:
     when = _parse_ts(ts)
-    for name in sorted(set(CODEX_SKILL_RE.findall(text))):
+    roots: dict[str, str] = {}
+    for m in SKILL_READ_RE.finditer(text):
+        roots.setdefault(m.group(2), m.group(1) or "")
+    for name in sorted(roots):
         prev = last_read.get(name)
         if when and prev and when - prev < READ_DEDUPE:
             continue
         if when:
             last_read[name] = when
-        s.events.append(["skill", ts, name, "read"])
+        s.events.append(["skill", ts, name, "read", roots[name]])  # 5th field: .claude/.agents/.codex or ""
 
 
 def _mark_audit_sweeps(s: Session, min_reads: int) -> None:

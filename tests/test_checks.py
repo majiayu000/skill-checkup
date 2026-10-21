@@ -268,3 +268,50 @@ def test_claude_read_of_skill_md_counts_as_use(tmp_path):
     reads = [e for e in s.events if e[0] == "skill"]
     assert [(e[2], e[3]) for e in reads] == [("reverse-video-prompt", "read")]
     assert turns.split(s)[0].skills == ["reverse-video-prompt"]
+
+
+def _usage_with(runtime_counts, read_roots=None):
+    from skill_checkup import usage
+    u = usage.Usage()
+    for rt, n in runtime_counts.items():
+        u.by_runtime[rt] = n
+        u.uses += n
+    for rt, roots in (read_roots or {}).items():
+        u.read_roots[rt].update(roots)
+    return u
+
+
+def test_one_sided_suggests_removing_only_what_is_safe(tmp_path):
+    from skill_checkup import usage
+    claude, agents = tmp_path / "claude", tmp_path / "agents"
+    for name in ("separate", "linked-to-claude", "read-from-claude"):
+        make_skill(claude, name, f"{name} skill")
+    make_skill(agents, "separate", "separate skill")
+    (agents / "linked-to-claude").symlink_to(claude / "linked-to-claude")
+    make_skill(agents, "read-from-claude", "read-from-claude skill")
+    roots = [Root("claude", claude, frozenset({"claude"})), Root("agents", agents, frozenset({"codex"}))]
+    skills = inventory.discover(roots)
+    use = {"separate": _usage_with({"codex": 5}),
+           "linked-to-claude": _usage_with({"codex": 5}),
+           "read-from-claude": _usage_with({"codex": 5}, {"codex": {"claude"}})}
+    got = {o.skill: (o.idle_runtime, o.removable, o.shared) for o in usage.one_sided(skills, use)}
+    assert got == {
+        "separate": ("claude", ["claude"], False),
+        "linked-to-claude": ("claude", ["claude"], True),
+        "read-from-claude": ("claude", ["claude"], True),
+    }
+    # The idle side being only a link is safe to remove.
+    use2 = {"linked-to-claude": _usage_with({"claude": 4})}
+    got2 = usage.one_sided(skills, use2)
+    assert [(o.skill, o.idle_runtime, o.shared) for o in got2] == [("linked-to-claude", "codex", False)]
+
+
+def test_skill_reads_record_the_folder_they_came_from(tmp_path):
+    f = tmp_path / "rollout-2026-10-01T00-00-00-00000000-0000-0000-0000-000000000000.jsonl"
+    f.write_text("\n".join([
+        json.dumps({"type": "session_meta", "payload": {"id": "abc", "originator": "codex-tui"}}),
+        json.dumps({"type": "response_item", "timestamp": "2026-10-01T00:00:01Z", "payload": {
+            "type": "function_call", "arguments": json.dumps({"cmd": "cat /h/.claude/skills/x/SKILL.md"})}}),
+    ]) + "\n")
+    s = sessions.parse_codex(f)
+    assert [e for e in s.events if e[0] == "skill"] == [["skill", "2026-10-01T00:00:01Z", "x", "read", "claude"]]
