@@ -14,10 +14,10 @@ It also lists requests you keep typing that no skill covers, which are candidate
 An appendix lists *silent* skills, ones you seemed to ask for that did not fire. That signal is low-confidence (mentions and requests look alike), so it never feeds the summary or the actions.
 
 ```bash
-uvx --from git+https://github.com/majiayu000/skill-checkup@v0.1.0 skill-checkup
+uvx --from git+https://github.com/majiayu000/skill-checkup@v0.1.1 skill-checkup
 ```
 
-No `uvx`? Use `pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.1.0 skill-checkup`, or clone the repo and run `python3 -m skill_checkup`. Python 3.10+, no dependencies.
+No `uvx`? Use `pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.1.1 skill-checkup`, or clone the repo and run `python3 -m skill_checkup`. Python 3.10+, no dependencies.
 
 It prints a short summary and writes the full report to `./skill-checkup-report.md`. The first run reads up to 90 days of logs and may take a minute; later runs use a cache.
 
@@ -125,7 +125,7 @@ Round 3 leans on "Unused" (9 / 9), the most mechanical check; the heuristic sect
 一个只读的 skill 体检工具：读本机已装的 skill 和 Claude Code / Codex 的会话日志，告诉你哪些 skill 坏了、互相抢触发、白占上下文、从没用过，以及有哪些反复手工做、却没有 skill 覆盖的事。“该触发却没触发”放在低置信附录里，不进摘要和动作清单。
 
 ```bash
-uvx --from git+https://github.com/majiayu000/skill-checkup@v0.1.0 skill-checkup --lang zh
+uvx --from git+https://github.com/majiayu000/skill-checkup@v0.1.1 skill-checkup --lang zh
 ```
 
 只读、不联网；报告默认不包含你的原话，要看例句加 `--show-examples`；`--summary-json s.json --anonymize` 生成只有计数、skill 名已替换的摘要，可以放心发给别人。

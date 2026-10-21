@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skill-checkup"
-version = "0.1.0"
+version = "0.1.1"
 description = "Read-only health report for the agent skills on your machine: broken, competing, silent, heavy and unused skills."
 readme = "README.md"
 requires-python = ">=3.10"
