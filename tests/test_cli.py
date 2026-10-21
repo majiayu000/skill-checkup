@@ -55,7 +55,10 @@ def test_default_run_writes_report_and_private_summary(tmp_path, monkeypatch, ca
     assert "At a glance" not in printed and "| Broken |" in printed
     report = out.read_text()
     assert "please deploy" not in report, "requests stay hidden without --show-examples"
-    assert "- `tidy-notes` (Used once or twice): 1 requests, named 1" in report
+    assert "- `tidy-notes` (Used once or twice): requests 1, named 1" in report  # appendix entry
+    glance = report.split("## Actions")[0]
+    assert "Silent" not in glance and "Reword" not in report
+    assert report.index("Appendix: low-confidence signals") > report.index("6. New skill candidates")
     data = json.loads(summary.read_text())
     assert "deploy-helper" not in summary.read_text()
     assert data["typed_messages"] == 3  # the continuation summary is not a typed message

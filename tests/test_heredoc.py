@@ -45,3 +45,21 @@ def test_missing_tool_does_not_treat_shell_text_as_heredoc():
         assert [(f.kind, f.params) for f in findings] == [
             ("missing-tool", {"line": 3, "cmd": "notarealtool-after"}),
         ], line
+
+
+def test_missing_tool_preserves_quote_state_around_heredoc():
+    for quote in ("'", '"'):
+        body = (
+            f"```bash\npython3 -c {quote}\n"
+            "not-a-shell-command <<eof\n"
+            f"{quote}\nnotarealtool-before <<eof\n"
+            f"payload-with-open-quote {quote}\neof\n"
+            "notarealtool-after\n```\n"
+        )
+        skill = inventory.Skill("demo", "demo", {}, body, Path("SKILL.md"))
+        with patch.object(broken.shutil, "which", side_effect=lambda cmd: "/bin/python3" if cmd == "python3" else None):
+            findings = broken._tools(skill)
+        assert [(f.kind, f.params) for f in findings] == [
+            ("missing-tool", {"line": 5, "cmd": "notarealtool-before"}),
+            ("missing-tool", {"line": 8, "cmd": "notarealtool-after"}),
+        ], quote

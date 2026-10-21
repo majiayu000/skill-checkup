@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
-CACHE_VERSION = "v3"
+CACHE_VERSION = "v5"
 
 
 def claude_projects() -> Path:
@@ -31,6 +31,7 @@ def cache_dir() -> Path:
     return Path(base) / "skill-checkup" / CACHE_VERSION
 
 CODEX_SKILL_RE = re.compile(r"skills/([A-Za-z0-9_.:-]+)/SKILL\.md")
+CLAUDE_SKILL_FILE_RE = re.compile(r"/skills/([A-Za-z0-9_.:-]+)/SKILL\.md$")
 CODEX_DOLLAR_RE = re.compile(r"(?<![\w$])\$([a-z][a-z0-9-]{2,})")
 COMMAND_RE = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
 COMMAND_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.S)
@@ -47,6 +48,9 @@ BUILTIN_COMMANDS = {
     "terminal-setup", "upgrade", "release-notes", "statusline", "todos", "output-style", "privacy-settings",
     "install-github-app", "pr-comments", "security-review", "artifacts", "workflows", "tasks", "btw",
 }
+# Context blocks a client wraps around the typed message, e.g. <in-app-browser-context>.
+INJECTED_BLOCK_RE = re.compile(r"<([a-z]+(?:[-_][a-z]+)+)\b[^>]*>.*?</\1>", re.S)
+REQUEST_MARKER_RE = re.compile(r"^## My request(?: for Codex)?:\s*$", re.M)
 PASTED_RE = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 
 # Kinds: user (text), skill (name, via), interrupt
@@ -90,7 +94,13 @@ def _clean_user_text(text: str) -> str | None:
     if t.startswith(("Another Claude session sent a message", "[SYSTEM NOTIFICATION",
                      "This session is being continued from a previous conversation")):
         return None
+    marker = list(REQUEST_MARKER_RE.finditer(t))
+    if marker:  # Codex prepends attachments and app state, then "## My request:"
+        t = t[marker[-1].end():].strip()
+    elif t.startswith("# Files mentioned by the user"):
+        return None
     t = PASTED_RE.sub(" [粘贴内容] ", t).strip()  # pasted material is not the user's own request
+    t = INJECTED_BLOCK_RE.sub(" ", t).strip()
     return t or None
 
 
@@ -99,9 +109,10 @@ def _clean_user_text(text: str) -> str | None:
 
 def parse_claude(path: Path) -> Session:
     s = Session("claude", path.stem, "", str(path))
+    last_read: dict[str, datetime] = {}
     with path.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
-            if '"user"' not in line and '"Skill"' not in line:
+            if '"user"' not in line and '"Skill"' not in line and "SKILL.md" not in line:
                 continue
             try:
                 d = json.loads(line)
@@ -118,10 +129,18 @@ def parse_claude(path: Path) -> Session:
             content = msg.get("content")
             if d.get("type") == "assistant" and isinstance(content, list):
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "tool_use" and item.get("name") == "Skill":
+                    if not isinstance(item, dict) or item.get("type") != "tool_use":
+                        continue
+                    if item.get("name") == "Skill":
                         name = (item.get("input") or {}).get("skill")
                         if isinstance(name, str) and name.strip():
                             s.events.append(["skill", ts, name.strip().split(":")[-1], "tool"])
+                    elif item.get("name") == "Read":
+                        # Agents often open a skill's SKILL.md directly instead of calling the Skill tool.
+                        path_arg = (item.get("input") or {}).get("file_path")
+                        m = CLAUDE_SKILL_FILE_RE.search(path_arg) if isinstance(path_arg, str) else None
+                        if m:
+                            _skill_reads(s, ts, f"skills/{m.group(1)}/SKILL.md", last_read)
                 continue
             if d.get("type") != "user" or d.get("isMeta"):
                 continue
@@ -196,12 +215,12 @@ def parse_codex(path: Path) -> Session:
                     text = "\n".join(c.get("text", "") for c in item.get("content", []) if isinstance(c, dict))
                 else:
                     if item.get("type") == "CommandExecution":
-                        _codex_reads(s, ts, " ".join(map(str, item.get("command") or [])), last_read)
+                        _skill_reads(s, ts, " ".join(map(str, item.get("command") or [])), last_read)
                     continue
             elif ptype in ("function_call", "custom_tool_call"):
                 raw = p.get("arguments") if ptype == "function_call" else p.get("input")
                 if isinstance(raw, str):
-                    _codex_reads(s, ts, raw, last_read)
+                    _skill_reads(s, ts, raw, last_read)
                 continue
             if text is None:
                 continue
@@ -215,7 +234,7 @@ def parse_codex(path: Path) -> Session:
     return s
 
 
-def _codex_reads(s: Session, ts: str, text: str, last_read: dict[str, datetime]) -> None:
+def _skill_reads(s: Session, ts: str, text: str, last_read: dict[str, datetime]) -> None:
     when = _parse_ts(ts)
     for name in sorted(set(CODEX_SKILL_RE.findall(text))):
         prev = last_read.get(name)
@@ -276,6 +295,7 @@ def iter_sessions(since_days: int, claude: bool = True, codex: bool = True,
             except OSError:
                 continue
             sess = _cached(f, parse_claude)
+            _mark_audit_sweeps(sess, sweep_reads)
             if sess.events:
                 yield sess
     if codex and codex_sessions().is_dir():

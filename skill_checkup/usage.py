@@ -44,15 +44,13 @@ def aggregate(sessions: list[Session]) -> dict[str, Usage]:
     return out
 
 
-def tier(skill: Skill, u: Usage | None, missed: int) -> str:
-    """active / low / dormant-critical / mute / unused."""
+def tier(skill: Skill, u: Usage | None) -> str:
+    """active / low / dormant-critical / unused."""
     uses = u.uses if u else 0
     if uses >= 3:
         return "active"
     if uses > 0:
         return "low"
-    if missed > 0:
-        return "mute"  # never fired, but requests that look like it exist
     if CRITICAL_HINT.search(skill.name) or CRITICAL_HINT.search(skill.description):
         return "dormant-critical"
     return "unused"

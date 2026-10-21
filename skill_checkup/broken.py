@@ -35,6 +35,33 @@ HEREDOC_RE = re.compile(
 )
 # Directories a runtime manages itself (the desktop app's synced Anthropic skills).
 MANAGED_ENTRIES = {"synced"}
+# A path introduced by one of these words is something the skill creates, not needs.
+WRITE_RE = re.compile(
+    r"生成|写入|写到|写进|同步到|同步副本|保存到|保存为|输出到|输出为|导出|落盘|另存|放在|存放|存到|存入|删除|删掉|清理|"
+    r"\b(?:write|writes|save|saves|output|outputs|create|creates|export|exports|generate|generates|"
+    r"delete|deletes|remove|removes|rm|mkdir|sync|syncs|copy\s+to|store|stores)\b",
+    re.I,
+)
+WRITE_LOOKBACK = 6
+
+
+def _write_context(lines: list[str], index: int, before: str) -> bool:
+    """True when the path sits under a write instruction: on its own line, or above it through
+    sibling list items, labels ending in a colon, and the nearest heading. Prose stops the walk."""
+    if WRITE_RE.search(before):
+        return True
+    for prev in reversed(lines[max(0, index - WRITE_LOOKBACK) : index]):
+        text = prev.strip()
+        if not text or text.startswith(("- ", "* ")) and not WRITE_RE.search(text):
+            continue
+        if text.startswith("#"):
+            return bool(WRITE_RE.search(text))
+        if text.endswith((":", "：")):
+            if WRITE_RE.search(text):
+                return True
+            continue
+        return False
+    return False
 OUTPUT_FLAGS = ("--out", "--output", "--json", "--csv", "-o", ">", ">>", "--dest", "--target")
 
 
@@ -118,7 +145,11 @@ def _paths(s: Skill, deprecated: list[Path]) -> list[Finding]:
     out: list[Finding] = []
     base = s.installs[0].real
     seen: set[str] = set()
-    for lineno, line in enumerate(s.body.splitlines(), start=1):
+    lines = s.body.splitlines()
+    # A path the skill writes anywhere is an output everywhere (e.g. a draft later copied with cp).
+    outputs = {m.group(1) for i, line in enumerate(lines) for m in PATH_RE.finditer(line)
+               if _write_context(lines, i, line[: m.start()])}
+    for lineno, line in enumerate(lines, start=1):
         for m in PATH_RE.finditer(line):
             raw = m.group(1)
             if raw in seen or PLACEHOLDER_RE.search(raw) or "/tmp/" in raw:
@@ -129,6 +160,8 @@ def _paths(s: Skill, deprecated: list[Path]) -> list[Finding]:
             before = line[: m.start()].rstrip()
             if before.endswith(OUTPUT_FLAGS) or before.endswith("="):
                 continue  # a path the skill will create, not one it needs
+            if raw in outputs:
+                continue
             seen.add(raw)
             target = _expand(raw, base)
             if raw.startswith(("/Users/", "/home/")) and not raw.startswith(str(HOME)):
@@ -145,17 +178,22 @@ def _paths(s: Skill, deprecated: list[Path]) -> list[Finding]:
     return out
 
 
+def _odd(line: str, quote: str) -> bool:
+    return (line.count(quote) - line.count("\\" + quote)) % 2 == 1
+
+
 def _tools(s: Skill) -> list[Finding]:
     missing: dict[str, int] = {}
+    own_words = set(s.name.split("-"))  # a skill documenting its own CLI, e.g. `browser wait` in opencli-browser
     for m in FENCE_RE.finditer(s.body):
         if m.group(1).lower() not in SHELL_LANGS:
             continue
         start = s.body[: m.start()].count("\n") + 2
-        heredoc, prev, quoted = None, "", False
+        heredoc, prev, quoted = None, "", None
         for offset, line in enumerate(m.group(2).splitlines()):
-            opens = (line.count('"') - line.count('\\"')) % 2 == 1
-            if quoted:
-                quoted = not opens  # inside a multi-line `python3 -c "..."` string
+            if quoted:  # inside a multi-line `python3 -c "..."` or `awk '...'` program
+                if _odd(line, quoted):
+                    quoted = None
                 continue
             if heredoc:
                 if line.strip() == heredoc:
@@ -164,10 +202,11 @@ def _tools(s: Skill) -> list[Finding]:
             here = next((h for h in HEREDOC_RE.finditer(line) if h.group("delimiter")), None)
             if not prev.rstrip().endswith(("\\", "|", "&&")):
                 cmd = _first_command(line)
-                if cmd and cmd not in missing and shutil.which(cmd) is None:
+                if cmd and cmd not in missing and cmd not in own_words and shutil.which(cmd) is None:
                     missing[cmd] = start + offset
             heredoc = here.group("delimiter") if here else None
-            quoted = opens and not heredoc
+            if not heredoc:
+                quoted = next((q for q in ("'", '"') if _odd(line, q)), None)
             prev = line
     return [Finding(s.name, "missing-tool", "tool_missing", {"line": ln, "cmd": cmd}) for cmd, ln in missing.items()]
 
@@ -178,6 +217,10 @@ def _first_command(line: str) -> str | None:
         return None
     for word in line.split():
         if "=" in word and not word.startswith("-"):
+            value = word.split("=", 1)[1].lstrip("\"'")
+            if value.startswith(("$(", "`")):
+                inner = value.lstrip("$(`")  # VAR=$(cmd sub ...): the command is the first word inside
+                return inner if re.fullmatch(r"[a-z][\w+-]*", inner) else None
             continue  # VAR=value prefix
         word = word.strip("`'\"()")
         if not word or word in BUILTINS or "/" in word or word.startswith("$"):

@@ -171,3 +171,20 @@ def test_anonymized_summary_has_no_skill_names():
             "effects": [{"skill": "secret-b", "runs": 3}]}
     text = json.dumps(report.anonymize(data))
     assert "secret" not in text and "skill-001" in text
+
+
+def test_claude_read_of_skill_md_counts_as_use(tmp_path):
+    f = tmp_path / "s.jsonl"
+    f.write_text(
+        _claude_line(type="user", entrypoint="cli", timestamp="2026-10-01T00:00:00Z",
+                     message={"content": "please use the video skill"})
+        + _claude_line(type="assistant", timestamp="2026-10-01T00:00:01Z", message={"content": [
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/h/.codex/skills/reverse-video-prompt/SKILL.md"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/h/.codex/skills/reverse-video-prompt/SKILL.md"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/h/notes/SKILL.md.bak"}}]}),
+        encoding="utf-8",
+    )
+    s = sessions.parse_claude(f)
+    reads = [e for e in s.events if e[0] == "skill"]
+    assert [(e[2], e[3]) for e in reads] == [("reverse-video-prompt", "read")]
+    assert turns.split(s)[0].skills == ["reverse-video-prompt"]

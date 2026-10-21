@@ -21,3 +21,9 @@ jobs:
       - run: python -m pytest -q
       - name: CLI runs on an empty home
         run: HOME="$(mktemp -d)" python -m skill_checkup --out - > /dev/null
+      - name: Demo machine produces every section
+        run: |
+          python examples/demo/build_demo.py "$RUNNER_TEMP/demo"
+          HOME="$RUNNER_TEMP/demo" python -m skill_checkup --since 36500 --context-tokens 100000 --out "$RUNNER_TEMP/demo.md"
+          grep -q "Copies have diverged" "$RUNNER_TEMP/demo.md"
+          grep -q "already handled in the body of \`pr-queue\`" "$RUNNER_TEMP/demo.md"
