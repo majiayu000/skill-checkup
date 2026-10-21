@@ -14,6 +14,8 @@ from .usage import explicit_only
 
 MISS_THRESHOLD = 0.38
 MINE_THRESHOLD = 0.45
+MINE_MIN_SESSIONS = 5
+_LATIN_TERM_RE = re.compile(r"[a-z][a-z0-9+-]{1,}")
 SNIPPET = 70
 
 
@@ -33,10 +35,21 @@ class Miss:
     kind: str  # named = user asked for it by name; similar = request resembles the description
 
 
+NAMED_MAX_CHARS = 400  # past this the name is usually inside pasted material, not a request
+BUILD_RE = r"(?:建|新建|创建|写|改|修改|更新|重写|修|build|create|write|edit|update|fix|rename)"
+
+
+def _request_text(text: str) -> bool:
+    """A message a person typed to ask for something, not agent-written or pasted material."""
+    return len(text) <= NAMED_MAX_CHARS and "SKILL.md" not in text and not text.lstrip().startswith("<")
+
+
 def _named(text: str, name: str) -> bool:
     n = re.escape(name)
     end = r"(?![\w/.-])"
-    return bool(re.search(rf"(?:^|\s)[/$]{n}{end}|(?:用|使用|调用|跑|运行|按)\s*{n}{end}|\buse\s+(?:the\s+)?{n}{end}|\b{n}\s+skill\b", text, re.I))
+    if re.search(rf"{BUILD_RE}[^。\n]{{0,20}}{n}{end}", text, re.I):
+        return False  # asking to build or change the skill, not to use it
+    return bool(re.search(rf"(?:^|\s)[/$]{n}{end}|(?:用|使用|调用|跑|运行|按)\s*{n}{end}|\buse\s+(?:the\s+)?{n}{end}", text, re.I))
 
 
 def missed(skills: dict[str, Skill], turns: list[Turn]) -> dict[str, list[Miss]]:
@@ -45,11 +58,13 @@ def missed(skills: dict[str, Skill], turns: list[Turn]) -> dict[str, list[Miss]]
     for t in turns:
         if t.skills or t.text.startswith("/") or len(t.text) < 6:
             continue
-        hit = next((name for name in skills if len(name) >= 3 and _named(t.text, name)), None)
+        hit = None
+        if _request_text(t.text):
+            hit = next((name for name in skills if len(name) >= 3 and _named(t.text, name)), None)
         if hit:
             out[hit].append(Miss(hit, t, 1.0, "named"))
             continue
-        ranked = corpus.rank(t.text, top=2) if len(tokens(t.text)) >= 6 else []
+        ranked = corpus.rank(t.text, top=2) if _request_text(t.text) and len(tokens(t.text)) >= 6 else []
         if not ranked:
             continue
         best, score = ranked[0]
@@ -98,6 +113,8 @@ def replay(skills: dict[str, Skill], turns: list[Turn], target: str, description
 class Candidate:
     terms: list[str]
     turns: list[Turn]
+    covered_by: str = ""  # a skill whose body handles this, though its description doesn't say so
+    covered_score: float = 0.0
 
     @property
     def sessions(self) -> int:
@@ -112,11 +129,31 @@ class Candidate:
         return len({t.text for t in self.turns}) / len(self.turns) < 0.3
 
 
-def mine(skills: dict[str, Skill], turns: list[Turn], min_sessions: int = 3) -> list[Candidate]:
+def _covering_skill(skills: dict[str, Skill], cand: "Candidate") -> tuple[str, float]:
+    """Requests often mix languages with a skill body (Chinese ask, English body), which defeats
+    TF-IDF. Use the English terms the requests share instead: a skill whose name, description or
+    body contains every one of them (at least two, plural-insensitive) probably handles this."""
+    counts: dict[str, int] = defaultdict(int)
+    for t in cand.turns:
+        for w in set(_LATIN_TERM_RE.findall(t.text.lower())):
+            counts[w.rstrip("s")] += 1
+    terms = [w for w, n in counts.items() if n >= max(2, len(cand.turns) // 2) and len(w) >= 2]
+    if len(terms) < 2:
+        return "", 0.0
+    best, best_hits = "", 0
+    for name, s in skills.items():
+        text = f"{name} {s.description} {s.body}".lower()
+        hits = [len(re.findall(rf"\b{re.escape(w)}s?\b", text)) for w in terms]
+        if all(hits) and sum(hits) > best_hits:  # every term present; most mentions wins
+            best, best_hits = name, sum(hits)
+    return (best, 1.0) if best else ("", 0.0)
+
+
+def mine(skills: dict[str, Skill], turns: list[Turn], min_sessions: int = MINE_MIN_SESSIONS) -> list[Candidate]:
     skill_corpus = Corpus({k: doc(s) for k, s in skills.items()})
     pool = []
     for t in turns:
-        if t.skills or t.text.startswith("/") or len(tokens(t.text)) < 6:
+        if t.skills or t.text.startswith("/") or not _request_text(t.text) or len(tokens(t.text)) < 6:
             continue
         top = skill_corpus.rank(t.text, top=1)
         if top and top[0][1] >= 0.2:
@@ -149,8 +186,9 @@ def mine(skills: dict[str, Skill], turns: list[Turn], min_sessions: int = 3) -> 
     for c, g in zip(centroids, groups):
         cand = Candidate(sorted(c, key=lambda k: -c[k])[:6], [pool[i] for i in g])
         if cand.sessions >= min_sessions and cand.days >= 2:
+            cand.covered_by, cand.covered_score = _covering_skill(skills, cand)
             out.append(cand)
-    return sorted(out, key=lambda c: (-c.sessions, -len(c.turns)))
+    return sorted(out, key=lambda c: (bool(c.covered_by), -c.sessions, -len(c.turns)))
 
 
 # ---------------------------------------------------------------- effect

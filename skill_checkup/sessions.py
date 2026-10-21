@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
-CACHE_VERSION = "v3"
+CACHE_VERSION = "v4"
 
 
 def claude_projects() -> Path:
@@ -47,6 +47,9 @@ BUILTIN_COMMANDS = {
     "terminal-setup", "upgrade", "release-notes", "statusline", "todos", "output-style", "privacy-settings",
     "install-github-app", "pr-comments", "security-review", "artifacts", "workflows", "tasks", "btw",
 }
+# Context blocks a client wraps around the typed message, e.g. <in-app-browser-context>.
+INJECTED_BLOCK_RE = re.compile(r"<([a-z]+(?:[-_][a-z]+)+)\b[^>]*>.*?</\1>", re.S)
+REQUEST_MARKER_RE = re.compile(r"^## My request(?: for Codex)?:\s*$", re.M)
 PASTED_RE = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 
 # Kinds: user (text), skill (name, via), interrupt
@@ -90,7 +93,13 @@ def _clean_user_text(text: str) -> str | None:
     if t.startswith(("Another Claude session sent a message", "[SYSTEM NOTIFICATION",
                      "This session is being continued from a previous conversation")):
         return None
+    marker = list(REQUEST_MARKER_RE.finditer(t))
+    if marker:  # Codex prepends attachments and app state, then "## My request:"
+        t = t[marker[-1].end():].strip()
+    elif t.startswith("# Files mentioned by the user"):
+        return None
     t = PASTED_RE.sub(" [粘贴内容] ", t).strip()  # pasted material is not the user's own request
+    t = INJECTED_BLOCK_RE.sub(" ", t).strip()
     return t or None
 
 

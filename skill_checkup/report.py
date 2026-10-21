@@ -86,6 +86,9 @@ def build(inp: Inputs) -> Result:
         acts.append(t("act_merge", members=members, keep=ranked[0]))
     for k in rewrite[:8]:
         acts.append(t("act_rewrite", name=k, n=len(misses[k])))
+    for c in cands:
+        if c.covered_by:
+            acts.append(t("act_cover", name=c.covered_by, n=len(c.turns)))
     for name, n in fat[:5]:
         acts.append(t("act_trim", name=name, n=n))
     if archive:
@@ -172,8 +175,10 @@ def build(inp: Inputs) -> Result:
     w(f"## {t('sec_mine')}\n")
     w(t("mine_note") + "\n")
     for c in cands[:10]:
-        w(t("mine_line", terms=sep.join(c.terms), sessions=c.sessions, n=len(c.turns),
-            tag=t("mine_auto") if c.automated else ""))
+        tag = t("mine_auto") if c.automated else ""
+        if c.covered_by:
+            tag += t("mine_covered", name=c.covered_by)
+        w(t("mine_line", terms=sep.join(c.terms), sessions=c.sessions, n=len(c.turns), tag=tag))
         if inp.show_examples:
             for turn in c.turns[:3]:
                 w(f"  - {turn.ts[:10]} {turn.session.runtime}: “{behavior.snippet(turn.text)}”")
@@ -203,7 +208,7 @@ def build(inp: Inputs) -> Result:
                     "budget_chars": b.budget_chars, "dropped": [e.skill for e in b.dropped]} for b in budgets],
         "effects": [{"skill": e.skill, "runs": e.runs, "interrupted": e.interrupted, "corrected": e.corrected}
                     for e in effects],
-        "candidates": [{"sessions": c.sessions, "requests": len(c.turns)} for c in cands],
+        "candidates": [{"sessions": c.sessions, "requests": len(c.turns), "covered_by": c.covered_by} for c in cands],
     }
     return Result("\n".join(L) + "\n", terminal + "\n", data)
 
@@ -225,4 +230,6 @@ def anonymize(data: dict) -> dict:
     out["uses"] = {alias(k): v for k, v in data["uses"].items()}
     out["budget"] = [{**b, "dropped": [alias(s) for s in b["dropped"]]} for b in data["budget"]]
     out["effects"] = [{**e, "skill": alias(e["skill"])} for e in data["effects"]]
+    out["candidates"] = [{**c, "covered_by": alias(c["covered_by"]) if c.get("covered_by") else ""}
+                         for c in data.get("candidates", [])]
     return out
