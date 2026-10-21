@@ -107,6 +107,86 @@ def test_codex_audit_sweep(tmp_path):
     assert all(e[3] == "audit" for e in s.events if e[0] == "skill")
 
 
+def test_claude_explicit_invocations_belong_to_their_turn(tmp_path):
+    f = tmp_path / "s.jsonl"
+    f.write_text(
+        _claude_line(type="user", timestamp="2026-10-01T00:00:00Z", message={
+            "content": "<command-name>/first</command-name><command-args>one</command-args>"})
+        + _claude_line(type="user", timestamp="2026-10-01T00:01:00Z", message={
+            "content": "<command-name>/second</command-name><command-args>two</command-args>"})
+        + _claude_line(type="user", timestamp="2026-10-01T00:02:00Z",
+                       message={"content": "Please inspect the source code"})
+        + _claude_line(type="assistant", timestamp="2026-10-01T00:02:01Z", message={
+            "content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "inspect"}}]})
+        + _claude_line(type="user", timestamp="2026-10-01T00:03:00Z", message={
+            "content": "<command-name>/third</command-name><command-args>three</command-args>"}),
+        encoding="utf-8",
+    )
+    ts = turns.split(sessions.parse_claude(f))
+    assert [(t.text, t.skills) for t in ts] == [
+        ("/first one", ["first"]),
+        ("/second two", ["second"]),
+        ("Please inspect the source code", ["inspect"]),
+        ("/third three", ["third"]),
+    ]
+
+
+def test_codex_explicit_invocations_belong_to_their_turn(tmp_path):
+    f = tmp_path / "s.jsonl"
+    f.write_text(
+        _claude_line(type="event_msg", timestamp="2026-10-01T00:00:00Z", payload={
+            "type": "user_message", "message": "$first one"})
+        + _claude_line(type="event_msg", timestamp="2026-10-01T00:01:00Z", payload={
+            "type": "user_message", "message": "$second two"})
+        + _claude_line(type="event_msg", timestamp="2026-10-01T00:02:00Z", payload={
+            "type": "user_message", "message": "Please inspect the source code"})
+        + _claude_line(type="response_item", timestamp="2026-10-01T00:02:01Z", payload={
+            "type": "function_call", "arguments": json.dumps({"cmd": "cat skills/inspect/SKILL.md"})})
+        + _claude_line(type="event_msg", timestamp="2026-10-01T00:03:00Z", payload={
+            "type": "user_message", "message": "$third three"}),
+        encoding="utf-8",
+    )
+    ts = turns.split(sessions.parse_codex(f))
+    assert [(t.text, t.skills) for t in ts] == [
+        ("$first one", ["first"]),
+        ("$second two", ["second"]),
+        ("Please inspect the source code", ["inspect"]),
+        ("$third three", ["third"]),
+    ]
+
+
+def test_cached_sessions_ignore_old_explicit_invocation_order(tmp_path):
+    import hashlib
+    from unittest.mock import patch
+
+    f = tmp_path / "s.jsonl"
+    ts = "2026-10-01T00:00:00Z"
+    previous = "2026-09-30T23:59:00Z"
+    f.write_text(
+        _claude_line(type="event_msg", timestamp=previous, payload={
+            "type": "user_message", "message": "Previous request"})
+        + _claude_line(type="event_msg", timestamp=ts, payload={
+            "type": "user_message", "message": "$first one"}), encoding="utf-8")
+    old = sessions.Session("codex", "s", "", str(f), events=[
+        ["user", previous, "Previous request"],
+        ["skill", ts, "first", "dollar"], ["user", ts, "$first one"],
+    ])
+    st = f.stat()
+    key = hashlib.sha1(str(f).encode()).hexdigest()
+    cache_home = tmp_path / "cache"
+    stale = json.dumps({"stamp": [st.st_mtime_ns, st.st_size], "session": old.__dict__})
+    legacy_files = [cache_home / "skill-checkup" / version / f"{key}.json" for version in ("v3", "v5")]
+    for legacy in legacy_files:
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(stale)
+    with patch.dict("os.environ", {"XDG_CACHE_HOME": str(cache_home)}):
+        actual = sessions._cached(f, sessions.parse_codex)
+    assert all(legacy.read_text() == stale for legacy in legacy_files)
+    assert [(t.text, t.skills) for t in turns.split(actual)] == [
+        ("Previous request", []), ("$first one", ["first"]),
+    ]
+
+
 def test_named_miss_and_path_mention(tmp_path):
     make_skill(tmp_path, "peerscope", "竞品分析 对比 市场调研")
     skills = inventory.discover(roots_of(t=tmp_path))
