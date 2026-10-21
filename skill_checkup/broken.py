@@ -26,7 +26,13 @@ BUILTINS = {
     "break", "continue", "import", "from", "const", "let", "var", "async", "await", "def",
     "class", "print", "try", "except", "finally", "with", "pass", "raise", "yield", "lambda",
 }
-HEREDOC_RE = re.compile(r"<<-?\\s*['\"]?(\\w+)['\"]?")
+# Skip quoted/escaped text, comments and arithmetic before matching a simple
+# heredoc delimiter. Other shell syntax is left to the existing heuristic.
+HEREDOC_RE = re.compile(
+    r"""'[^']*'|"(?:\\.|[^"\\])*"|\\.|(?:^|(?<=[\s;&|()]))#.*|"""
+    r"""\$\(\(.*?\)\)|\(\(.*?\)\)|"""
+    r"""(?<!<)<<-?\s*(?P<quote>['"]?)(?P<delimiter>\w+)(?P=quote)(?=$|[\s;&|()<>])"""
+)
 # Directories a runtime manages itself (the desktop app's synced Anthropic skills).
 MANAGED_ENTRIES = {"synced"}
 # A path introduced by one of these words is something the skill creates, not needs.
@@ -193,12 +199,12 @@ def _tools(s: Skill) -> list[Finding]:
                 if line.strip() == heredoc:
                     heredoc = None
                 continue
-            here = HEREDOC_RE.search(line)
+            here = next((h for h in HEREDOC_RE.finditer(line) if h.group("delimiter")), None)
             if not prev.rstrip().endswith(("\\", "|", "&&")):
                 cmd = _first_command(line)
                 if cmd and cmd not in missing and cmd not in own_words and shutil.which(cmd) is None:
                     missing[cmd] = start + offset
-            heredoc = here.group(1) if here else None
+            heredoc = here.group("delimiter") if here else None
             if not heredoc:
                 quoted = next((q for q in ("'", '"') if _odd(line, q)), None)
             prev = line
