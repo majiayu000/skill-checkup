@@ -14,7 +14,7 @@ from .turns import Turn
 
 KINDS = ["dead-link", "frontmatter", "diverged", "deprecated-root", "dead-path", "missing-tool", "known"]
 HIGH = {"dead-link", "frontmatter", "diverged", "deprecated-root"}
-TIERS = ["active", "low", "mute", "dormant-critical", "unused"]
+TIERS = ["active", "low", "dormant-critical", "unused"]
 
 
 @dataclass
@@ -51,15 +51,16 @@ def build(inp: Inputs) -> Result:
     uses = {k: (use[k].uses if k in use else 0) for k in skills}
     budgets = budget.analyze(skills, uses, inp.budget_chars)
     fat = budget.fattest(skills)
-    tiers = {k: usage.tier(s, use.get(k), len(misses.get(k, []))) for k, s in skills.items()}
+    # Silent matches measured 0/6 in a hand check, so they stay out of tiers, totals and actions.
+    tiers = {k: usage.tier(s, use.get(k)) for k, s in skills.items()}
     effects = behavior.effect(turns)
     cands = behavior.mine(skills, turns)
 
     claude_budget = next(b for b in budgets if b.runtime == "claude")
-    big_dropped = next(b for b in budget.analyze(skills, uses, inp.budget_chars * 5) if b.runtime == "claude").dropped
+    big_chars = int(1_000_000 * 0.01 * 4)  # the same rule for a 1M-token window
+    big_dropped = next(b for b in budget.analyze(skills, uses, big_chars) if b.runtime == "claude").dropped
     in_cluster = {m for c in clusters for m in c.members}
     archive = sorted(k for k, v in tiers.items() if v == "unused" and k not in in_cluster)
-    rewrite = [k for k in sorted(misses, key=lambda k: -len(misses[k])) if tiers[k] in ("mute", "low", "unused")]
     hi = [f for f in findings if f.kind in HIGH]
     root_counts = Counter(r for s in skills.values() for r in set(s.roots))
 
@@ -67,7 +68,6 @@ def build(inp: Inputs) -> Result:
         t("glance_head"),
         t("row_broken", hi=len(hi), total=len(findings)),
         t("row_overlap", n=len(clusters)),
-        t("row_mute", n=len(misses)),
         t("row_fat", fat=len(fat), chars=budget.FAT_CHARS, dropped=len(claude_budget.dropped)),
         t("row_unused", n=sum(1 for v in tiers.values() if v == "unused")),
     ]
@@ -84,8 +84,9 @@ def build(inp: Inputs) -> Result:
         ranked = sorted(c.members, key=lambda m: -uses.get(m, 0))
         members = " / ".join(f"`{m}`({uses.get(m, 0)})" for m in ranked)
         acts.append(t("act_merge", members=members, keep=ranked[0]))
-    for k in rewrite[:8]:
-        acts.append(t("act_rewrite", name=k, n=len(misses[k])))
+    for c in cands:
+        if c.covered_by:
+            acts.append(t("act_cover", name=c.covered_by, n=len(c.turns)))
     for name, n in fat[:5]:
         acts.append(t("act_trim", name=name, n=n))
     if archive:
@@ -121,19 +122,6 @@ def build(inp: Inputs) -> Result:
             w(t("overlap_pair", a=a, b=b, sim=sim, terms=sep.join(terms)))
     w("")
 
-    w(f"## {t('sec_mute')}\n")
-    w(t("mute_note") + "\n")
-    for k in sorted(misses, key=lambda k: -len(misses[k])):
-        kinds = Counter(m.kind for m in misses[k])
-        w(t("mute_line", name=k, tier=t("tier." + tiers[k]), n=len(misses[k]),
-            kinds=", ".join(f"{a} {b}" for a, b in kinds.items())))
-        if inp.show_examples:
-            for m in misses[k][:3]:
-                w(f"  - {m.turn.ts[:10]} {m.turn.session.runtime}: “{behavior.snippet(m.turn.text)}”")
-    if misses and not inp.show_examples:
-        w("\n" + t("examples_hidden"))
-    w("")
-
     w(f"## {t('sec_budget')}\n")
     w(t("budget_note", ctx=inp.context_tokens, chars=inp.budget_chars) + "\n")
     for b in budgets:
@@ -141,7 +129,7 @@ def build(inp: Inputs) -> Result:
         if b.runtime == "claude" and b.dropped:
             line += t("budget_over", over=b.total_chars - b.budget_chars, dropped=len(b.dropped))
         w(line)
-    w(t("budget_big", chars=inp.budget_chars * 5, dropped=len(big_dropped)))
+    w(t("budget_big", chars=big_chars, dropped=len(big_dropped)))
     if claude_budget.dropped:
         w("\n" + t("budget_dropped", ctx=inp.context_tokens,
                    names=", ".join(f"`{e.skill}`" for e in claude_budget.dropped)))
@@ -172,14 +160,30 @@ def build(inp: Inputs) -> Result:
     w(f"## {t('sec_mine')}\n")
     w(t("mine_note") + "\n")
     for c in cands[:10]:
-        w(t("mine_line", terms=sep.join(c.terms), sessions=c.sessions, n=len(c.turns),
-            tag=t("mine_auto") if c.automated else ""))
+        tag = t("mine_auto") if c.automated else ""
+        if c.covered_by:
+            tag += t("mine_covered", name=c.covered_by)
+        w(t("mine_line", terms=sep.join(c.terms), sessions=c.sessions, n=len(c.turns), tag=tag))
         if inp.show_examples:
             for turn in c.turns[:3]:
                 w(f"  - {turn.ts[:10]} {turn.session.runtime}: “{behavior.snippet(turn.text)}”")
     if not cands:
         w(t("mine_none"))
     elif not inp.show_examples:
+        w("\n" + t("examples_hidden"))
+    w("")
+
+    w(f"## {t('sec_appendix_mute')}\n")
+    w(t("appendix_note") + "\n")
+    w(t("mute_note") + "\n")
+    for k in sorted(misses, key=lambda k: -len(misses[k])):
+        kinds = Counter(m.kind for m in misses[k])
+        w(t("mute_line", name=k, tier=t("tier." + tiers[k]), n=len(misses[k]),
+            kinds=", ".join(f"{a} {b}" for a, b in kinds.items())))
+        if inp.show_examples:
+            for m in misses[k][:3]:
+                w(f"  - {m.turn.ts[:10]} {m.turn.session.runtime}: “{behavior.snippet(m.turn.text)}”")
+    if misses and not inp.show_examples:
         w("\n" + t("examples_hidden"))
     w("")
 
@@ -203,7 +207,7 @@ def build(inp: Inputs) -> Result:
                     "budget_chars": b.budget_chars, "dropped": [e.skill for e in b.dropped]} for b in budgets],
         "effects": [{"skill": e.skill, "runs": e.runs, "interrupted": e.interrupted, "corrected": e.corrected}
                     for e in effects],
-        "candidates": [{"sessions": c.sessions, "requests": len(c.turns)} for c in cands],
+        "candidates": [{"sessions": c.sessions, "requests": len(c.turns), "covered_by": c.covered_by} for c in cands],
     }
     return Result("\n".join(L) + "\n", terminal + "\n", data)
 
@@ -225,4 +229,6 @@ def anonymize(data: dict) -> dict:
     out["uses"] = {alias(k): v for k, v in data["uses"].items()}
     out["budget"] = [{**b, "dropped": [alias(s) for s in b["dropped"]]} for b in data["budget"]]
     out["effects"] = [{**e, "skill": alias(e["skill"])} for e in data["effects"]]
+    out["candidates"] = [{**c, "covered_by": alias(c["covered_by"]) if c.get("covered_by") else ""}
+                         for c in data.get("candidates", [])]
     return out

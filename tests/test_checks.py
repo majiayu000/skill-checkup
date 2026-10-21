@@ -174,11 +174,14 @@ def test_cached_sessions_ignore_old_explicit_invocation_order(tmp_path):
     st = f.stat()
     key = hashlib.sha1(str(f).encode()).hexdigest()
     cache_home = tmp_path / "cache"
-    legacy = cache_home / "skill-checkup" / "v3" / f"{key}.json"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text(json.dumps({"stamp": [st.st_mtime_ns, st.st_size], "session": old.__dict__}))
+    stale = json.dumps({"stamp": [st.st_mtime_ns, st.st_size], "session": old.__dict__})
+    legacy_files = [cache_home / "skill-checkup" / version / f"{key}.json" for version in ("v3", "v5")]
+    for legacy in legacy_files:
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(stale)
     with patch.dict("os.environ", {"XDG_CACHE_HOME": str(cache_home)}):
         actual = sessions._cached(f, sessions.parse_codex)
+    assert all(legacy.read_text() == stale for legacy in legacy_files)
     assert [(t.text, t.skills) for t in turns.split(actual)] == [
         ("Previous request", []), ("$first one", ["first"]),
     ]
@@ -248,3 +251,20 @@ def test_anonymized_summary_has_no_skill_names():
             "effects": [{"skill": "secret-b", "runs": 3}]}
     text = json.dumps(report.anonymize(data))
     assert "secret" not in text and "skill-001" in text
+
+
+def test_claude_read_of_skill_md_counts_as_use(tmp_path):
+    f = tmp_path / "s.jsonl"
+    f.write_text(
+        _claude_line(type="user", entrypoint="cli", timestamp="2026-10-01T00:00:00Z",
+                     message={"content": "please use the video skill"})
+        + _claude_line(type="assistant", timestamp="2026-10-01T00:00:01Z", message={"content": [
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/h/.codex/skills/reverse-video-prompt/SKILL.md"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/h/.codex/skills/reverse-video-prompt/SKILL.md"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/h/notes/SKILL.md.bak"}}]}),
+        encoding="utf-8",
+    )
+    s = sessions.parse_claude(f)
+    reads = [e for e in s.events if e[0] == "skill"]
+    assert [(e[2], e[3]) for e in reads] == [("reverse-video-prompt", "read")]
+    assert turns.split(s)[0].skills == ["reverse-video-prompt"]
