@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
-CACHE_VERSION = "v7"
+CACHE_VERSION = "v8"
 
 
 def claude_projects() -> Path:
@@ -179,7 +179,7 @@ _CODEX_KEYS = ('"user_message"', '"UserMessage"', "SKILL.md", '"turn_aborted"', 
 def parse_codex(path: Path) -> Session:
     s = Session("codex", path.stem[-36:], "", str(path))
     last_read: dict[str, datetime] = {}
-    seen_user: set[str] = set()
+    unmatched_user: dict[tuple[str, str], tuple[str, int]] = {}
     with path.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
             if not any(k in line for k in _CODEX_KEYS):
@@ -226,9 +226,20 @@ def parse_codex(path: Path) -> Session:
             if text is None:
                 continue
             clean = _clean_user_text(text)
-            if not clean or clean in seen_user:  # old and new formats can both carry the message
+            if not clean:
                 continue
-            seen_user.add(clean)
+            # Conservatively pair same-timestamp old/new format copies one-to-one.
+            # Without a timestamp, matching text alone cannot establish identity.
+            if isinstance(ts, str) and ts:
+                key = (ts, clean)
+                previous, count = unmatched_user.get(key, (ptype, 0))
+                if previous != ptype:
+                    if count == 1:
+                        del unmatched_user[key]
+                    else:
+                        unmatched_user[key] = (previous, count - 1)
+                    continue
+                unmatched_user[key] = (ptype, count + 1)
             s.events.append(["user", ts, clean[:4000]])
             for name in sorted(set(CODEX_DOLLAR_RE.findall(clean))):
                 s.events.append(["skill", ts, name, "dollar"])
