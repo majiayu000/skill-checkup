@@ -111,3 +111,17 @@ def test_shared_boilerplate_does_not_chain_unrelated_skills(tmp_path):
     skills = inventory.discover([Root("t", tmp_path, BOTH)])
     groups = [c.members for c in overlap.find(skills, threshold=0.3)]
     assert all(len(g) == 2 for g in groups), groups
+
+
+def test_links_in_requests_do_not_count_as_coverage_terms(tmp_path):
+    make_skill(tmp_path, "x-batch", "Batch-generate X posts from reports.",
+               body="Write each X thread with a link like https://example.com/a and https://example.com/b.\n")
+    skills = inventory.discover([Root("t", tmp_path, BOTH)])
+    asks = [f"https://news.example.com/p/{i} 帮我做一个会火的 threads 帖子 第{i}次" for i in range(6)]
+    turn_list = []
+    for i, text in enumerate(asks):
+        s = sessions.Session("claude", f"s{i}", "", "")
+        s.events = [["user", f"2026-10-0{i + 1}T00:00:00Z", text]]
+        turn_list.extend(turns.split(s))
+    cands = behavior.mine(skills, turn_list)
+    assert cands and not cands[0].covered_by

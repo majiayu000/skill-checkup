@@ -17,6 +17,7 @@ MINE_THRESHOLD = 0.45
 MINE_MIN_SESSIONS = 5
 COVER_MIN_SHARE = 0.8  # share of the requests' recurring English terms a skill must contain
 _LATIN_TERM_RE = re.compile(r"[a-z][a-z0-9+-]{1,}")
+_URL_RE = re.compile(r"https?://\S+|www\.\S+")
 SNIPPET = 70
 
 
@@ -136,7 +137,7 @@ def _covering_skill(skills: dict[str, Skill], cand: "Candidate") -> tuple[str, f
     body contains most of them (at least two terms, plural-insensitive) probably handles this."""
     counts: dict[str, int] = defaultdict(int)
     for t in cand.turns:
-        for w in set(_LATIN_TERM_RE.findall(t.text.lower())):
+        for w in set(_LATIN_TERM_RE.findall(_URL_RE.sub(" ", t.text.lower()))):  # links are not topic words
             if w not in STOPWORDS:
                 counts[w.rstrip("s")] += 1
     terms = [w for w, n in counts.items() if n >= max(2, len(cand.turns) // 2) and len(w) >= 2]
