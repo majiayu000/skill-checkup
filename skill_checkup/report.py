@@ -55,6 +55,10 @@ def build(inp: Inputs) -> Result:
     tiers = {k: usage.tier(s, use.get(k)) for k, s in skills.items()}
     effects = behavior.effect(turns)
     cands = behavior.mine(skills, turns)
+    sided = usage.one_sided(skills, use)
+    gaps = [c for c in cands if c.covered_by]
+    split = {k: (use[k].by_runtime.get("claude", 0), use[k].by_runtime.get("codex", 0)) if k in use else (0, 0)
+             for k in skills}
 
     claude_budget = next(b for b in budgets if b.runtime == "claude")
     big_chars = int(1_000_000 * 0.01 * 4)  # the same rule for a 1M-token window
@@ -68,8 +72,11 @@ def build(inp: Inputs) -> Result:
         t("glance_head"),
         t("row_broken", hi=len(hi), total=len(findings)),
         t("row_overlap", n=len(clusters)),
-        t("row_fat", fat=len(fat), chars=budget.FAT_CHARS, dropped=len(claude_budget.dropped)),
+        t("row_gaps", n=len(gaps)),
+        t("row_sided", n=len(sided)),
         t("row_unused", n=sum(1 for v in tiers.values() if v == "unused")),
+        t("row_fat", fat=len(fat), chars=budget.FAT_CHARS, dropped=len(claude_budget.dropped))
+        if claude_budget.dropped else t("row_fat_none", ctx=inp.context_tokens),
     ]
 
     acts = []
@@ -80,15 +87,19 @@ def build(inp: Inputs) -> Result:
         kinds = Counter(t("kind." + f.kind)[0] for f in fs)
         what = sep.join(f"{k}{' ×' + str(n) if n > 1 else ''}" for k, n in kinds.items())
         acts.append(t("act_fix", name=name, what=what, fix=fs[0].fix(t)))
+    for c in gaps:
+        acts.append(t("act_cover", name=c.covered_by, n=len(c.turns)))
     for c in clusters[:8]:
         ranked = sorted(c.members, key=lambda m: -uses.get(m, 0))
         members = " / ".join(f"`{m}`({uses.get(m, 0)})" for m in ranked)
         acts.append(t("act_merge", members=members, keep=ranked[0]))
-    for c in cands:
-        if c.covered_by:
-            acts.append(t("act_cover", name=c.covered_by, n=len(c.turns)))
-    for name, n in fat[:5]:
-        acts.append(t("act_trim", name=name, n=n))
+    for o in sided:
+        key = "act_sided" if not o.shared else ("act_sided_hide" if o.idle_runtime == "claude" else "act_sided_keep")
+        acts.append(t(key, name=o.skill, idle=t("rt." + o.idle_runtime), busy=t("rt." + o.busy_runtime),
+                      n=o.busy_uses, roots=", ".join(o.removable)))
+    if claude_budget.dropped:
+        for name, n in fat[:5]:
+            acts.append(t("act_trim", name=name, n=n))
     if archive:
         acts.append(t("act_archive", names=", ".join(f"`{a}`" for a in archive)))
 
@@ -122,8 +133,30 @@ def build(inp: Inputs) -> Result:
             w(t("overlap_pair", a=a, b=b, sim=sim, terms=sep.join(terms)))
     w("")
 
+    w(f"## {t('sec_sided')}\n")
+    w(t("sided_note") + "\n")
+    for o in sided:
+        w(t("sided_line_shared" if o.shared else "sided_line", name=o.skill, idle=t("rt." + o.idle_runtime),
+            busy=t("rt." + o.busy_runtime), n=o.busy_uses, roots=", ".join(o.removable)))
+    if not sided:
+        w(t("sided_none"))
+    w("")
+
+    w(f"## {t('sec_tiers')}\n")
+    w(t("tiers_note") + "\n")
+    for tier in TIERS:
+        names = sorted((k for k, v in tiers.items() if v == tier), key=lambda k: -uses.get(k, 0))
+        if names:
+            w(f"- **{t('tier.' + tier)}** ({len(names)}): "
+              + ", ".join(f"`{n}`" + (f"({split[n][0]}|{split[n][1]})" if uses.get(n) else "") for n in names))
+    extra = sorted((k for k in use if k not in skills and use[k].uses >= 3), key=lambda k: -use[k].uses)
+    if extra:
+        w(t("tiers_extra", names=", ".join(f"`{k}`({use[k].uses})" for k in extra[:20])))
+    w("")
+
     w(f"## {t('sec_budget')}\n")
     w(t("budget_note", ctx=inp.context_tokens, chars=inp.budget_chars) + "\n")
+    w(t("budget_measure") + "\n")
     for b in budgets:
         line = t("budget_line", runtime=b.runtime, n=len(b.entries), total=b.total_chars)
         if b.runtime == "claude" and b.dropped:
@@ -137,17 +170,6 @@ def build(inp: Inputs) -> Result:
         w("\n" + t("budget_fat") + "\n")
         for name, n in fat:
             w(t("fat_line", name=name, n=n))
-    w("")
-
-    w(f"## {t('sec_tiers')}\n")
-    for tier in TIERS:
-        names = sorted((k for k, v in tiers.items() if v == tier), key=lambda k: -uses.get(k, 0))
-        if names:
-            w(f"- **{t('tier.' + tier)}** ({len(names)}): "
-              + ", ".join(f"`{n}`" + (f"({uses[n]})" if uses.get(n) else "") for n in names))
-    extra = sorted((k for k in use if k not in skills and use[k].uses >= 3), key=lambda k: -use[k].uses)
-    if extra:
-        w(t("tiers_extra", names=", ".join(f"`{k}`({use[k].uses})" for k in extra[:20])))
     w("")
 
     w(f"## {t('sec_effect')}\n")
@@ -203,6 +225,9 @@ def build(inp: Inputs) -> Result:
         "missed": {k: len(v) for k, v in misses.items()},
         "tiers": tiers,
         "uses": uses,
+        "uses_by_runtime": {k: {"claude": c, "codex": x} for k, (c, x) in split.items()},
+        "one_sided": [{"skill": o.skill, "idle": o.idle_runtime, "busy": o.busy_runtime, "uses": o.busy_uses,
+                       "removable": o.removable, "shared": o.shared} for o in sided],
         "budget": [{"runtime": b.runtime, "skills": len(b.entries), "total_chars": b.total_chars,
                     "budget_chars": b.budget_chars, "dropped": [e.skill for e in b.dropped]} for b in budgets],
         "effects": [{"skill": e.skill, "runs": e.runs, "interrupted": e.interrupted, "corrected": e.corrected}
@@ -227,6 +252,8 @@ def anonymize(data: dict) -> dict:
     out["missed"] = {alias(k): v for k, v in data["missed"].items()}
     out["tiers"] = {alias(k): v for k, v in data["tiers"].items()}
     out["uses"] = {alias(k): v for k, v in data["uses"].items()}
+    out["uses_by_runtime"] = {alias(k): v for k, v in data.get("uses_by_runtime", {}).items()}
+    out["one_sided"] = [{**o, "skill": alias(o["skill"])} for o in data.get("one_sided", [])]
     out["budget"] = [{**b, "dropped": [alias(s) for s in b["dropped"]]} for b in data["budget"]]
     out["effects"] = [{**e, "skill": alias(e["skill"])} for e in data["effects"]]
     out["candidates"] = [{**c, "covered_by": alias(c["covered_by"]) if c.get("covered_by") else ""}

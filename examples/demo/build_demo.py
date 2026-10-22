@@ -82,6 +82,14 @@ def claude_session(day: int, request: str, skill: str | None) -> str:
     return out
 
 
+def codex_session(day: int, request: str, skill: str, home: Path) -> str:
+    ts = f"2099-01-{day:02d}T09:00:00Z"
+    read = json.dumps({"cmd": f"cat {home}/.agents/skills/{skill}/SKILL.md"})
+    return (line(type="session_meta", payload={"id": f"codex-{day}", "originator": "codex-tui"})
+            + line(type="event_msg", timestamp=ts, payload={"type": "user_message", "message": request})
+            + line(type="response_item", timestamp=ts, payload={"type": "function_call", "arguments": read}))
+
+
 def build(home: Path) -> None:
     if home.exists():
         shutil.rmtree(home)
@@ -95,7 +103,7 @@ def build(home: Path) -> None:
     # A link left behind after a folder was moved.
     (roots["claude"] / "old-onboarding").symlink_to(home / "archive" / "old-onboarding")
 
-    used = ["deploy-preview"] * 6 + ["release-notes"] * 4 + ["commit-style"] * 5 + ["pr-queue"] * 3 + ["api-docs"]
+    used = ["deploy-preview"] * 6 + ["release-notes"] * 4 + ["pr-queue"] * 3 + ["api-docs"]
     projects = home / ".claude" / "projects" / "demo"
     projects.mkdir(parents=True)
     for i, skill in enumerate(used):
@@ -105,6 +113,12 @@ def build(home: Path) -> None:
             "fix the open issues and PRs in this repo today", "fix all of the open issues and PRs in this repo"]
     for i, ask in enumerate(asks):
         (projects / f"ask-{i:02d}.jsonl").write_text(claude_session(3 + i * 2, ask, None))
+    # commit-style is installed for both agents but only Codex ever uses it.
+    for i in range(4):
+        day = home / ".codex" / "sessions" / "2099" / "01" / f"{10 + i:02d}"
+        day.mkdir(parents=True)
+        (day / f"rollout-2099-01-{10 + i:02d}T09-00-00-0000000{i}-0000-0000-0000-000000000000.jsonl").write_text(
+            codex_session(10 + i, "tidy up these commit messages", "commit-style", home))
 
 
 if __name__ == "__main__":
