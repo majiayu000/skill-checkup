@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <rect width="1280" height="640" fill="#0f1720"/>
+  <rect x="64" y="64" width="1152" height="512" rx="24" fill="#16212c" stroke="#2a3a4a" stroke-width="2"/>
+  <text x="112" y="170" font-family="Menlo, 'SF Mono', Consolas, monospace" font-size="64" font-weight="700" fill="#e6edf3">skill-checkup</text>
+  <text x="112" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" fill="#9fb3c8">Audit Agent Skills across Claude Code and Codex</text>
+  <g font-family="Menlo, 'SF Mono', Consolas, monospace" font-size="28" fill="#e6edf3">
+    <text x="112" y="322"><tspan fill="#ff7b72">✗</tspan>  broken links, missing files, drifted copies</text>
+    <text x="112" y="372"><tspan fill="#f2cc60">⇄</tspan>  descriptions that compete for the same requests</text>
+    <text x="112" y="422"><tspan fill="#79c0ff">?</tspan>  descriptions that miss what the skill does</text>
+    <text x="112" y="472"><tspan fill="#7ee787">◐</tspan>  skills only one agent uses</text>
+  </g>
+  <text x="112" y="540" font-family="Menlo, 'SF Mono', Consolas, monospace" font-size="22" fill="#6e8296">read-only · offline · no dependencies · github.com/majiayu000/skill-checkup</text>
+</svg>

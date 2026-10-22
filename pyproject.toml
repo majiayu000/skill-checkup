@@ -5,16 +5,31 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skill-checkup"
 version = "0.2.0"
-description = "Read-only health report for the agent skills on your machine: broken, competing, silent, heavy and unused skills."
+description = "Audit Agent Skills (SKILL.md) across Claude Code and Codex: broken, drifted, competing, never-triggering and one-sided skills."
+keywords = ["claude-code", "codex", "agent-skills", "skill-md", "skills", "lint", "audit", "anthropic", "openai", "ai-agents"]
+authors = [{ name = "majiayu000" }]
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = []
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Utilities",
 ]
+
+[project.urls]
+Homepage = "https://majiayu000.github.io/skill-checkup/"
+Repository = "https://github.com/majiayu000/skill-checkup"
+Issues = "https://github.com/majiayu000/skill-checkup/issues"
+Changelog = "https://github.com/majiayu000/skill-checkup/releases"
 
 [project.scripts]
 skill-checkup = "skill_checkup.__main__:main"

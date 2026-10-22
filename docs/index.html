@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skill-checkup · Audit Agent Skills for Claude Code and Codex</title>
+<meta name="description" content="Audit and lint the Agent Skills (SKILL.md) installed for Claude Code and Codex. Find broken skills, copies that drifted between ~/.claude/skills and ~/.agents/skills, competing descriptions, skills that never trigger, and skills only one agent uses. Read-only and offline.">
+<link rel="canonical" href="https://majiayu000.github.io/skill-checkup/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="skill-checkup · Audit Agent Skills for Claude Code and Codex">
+<meta property="og:description" content="Find broken, drifted, competing and never-triggering skills across Claude Code and Codex. Read-only, offline, no dependencies.">
+<meta property="og:url" content="https://majiayu000.github.io/skill-checkup/">
+<meta property="og:image" content="https://majiayu000.github.io/skill-checkup/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="skill-checkup · Audit Agent Skills for Claude Code and Codex">
+<meta name="twitter:description" content="Find broken, drifted, competing and never-triggering skills across Claude Code and Codex.">
+<meta name="twitter:image" content="https://majiayu000.github.io/skill-checkup/og.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "skill-checkup",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux",
+  "description": "Read-only audit of Agent Skills (SKILL.md) across Claude Code and Codex: broken skills, drifted copies, competing descriptions, description gaps and skills only one agent uses.",
+  "url": "https://majiayu000.github.io/skill-checkup/",
+  "codeRepository": "https://github.com/majiayu000/skill-checkup",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Why isn't my Claude Code skill triggering?",
+     "acceptedAnswer": {"@type": "Answer", "text": "The agent decides from the skill's description. If it doesn't mention what you ask for, the skill won't fire even when its body can do the job. skill-checkup finds repeated requests that match a skill's body but not its description, and replay checks a rewording against your real requests."}},
+    {"@type": "Question", "name": "How do I keep skills in sync between Claude Code and Codex?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Claude Code reads ~/.claude/skills and Codex reads ~/.agents/skills, so copies drift. skill-checkup reports same-name copies whose contents differ, links that point nowhere, and skills one agent loads but never uses, with whether deleting that copy is safe."}},
+    {"@type": "Question", "name": "Is skill-checkup the same as /skill-doctor?",
+     "acceptedAnswer": {"@type": "Answer", "text": "No. /skill-doctor, built into Claude Code, lists unused Claude Code skills with their token cost. skill-checkup covers broken and drifted skills, competing or incomplete descriptions, Codex, and skills used by only one agent."}},
+    {"@type": "Question", "name": "Does skill-checkup send my conversations anywhere?",
+     "acceptedAnswer": {"@type": "Answer", "text": "No. It reads local Claude Code and Codex session logs to count skill use, changes nothing, sends nothing, and leaves your messages out of the report unless you pass --show-examples."}}
+  ]
+}
+</script>
+<style>
+:root{--bg:#ffffff;--fg:#1f2328;--muted:#59636e;--card:#f6f8fa;--line:#d1d9e0;--accent:#0969da;--code:#f6f8fa}
+@media (prefers-color-scheme: dark){:root{--bg:#0f1720;--fg:#e6edf3;--muted:#9fb3c8;--card:#16212c;--line:#2a3a4a;--accent:#79c0ff;--code:#16212c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:860px;margin:0 auto;padding:48px 16px 64px}
+h1{font:700 2.4rem/1.15 Menlo,"SF Mono",Consolas,monospace;margin:0 0 12px}
+h2{font-size:1.3rem;margin:44px 0 12px}
+h3{font-size:1.05rem;margin:22px 0 6px}
+p.lede{font-size:1.15rem;color:var(--muted);margin:0 0 24px}
+a{color:var(--accent)}
+pre,code{font-family:Menlo,"SF Mono",Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font-size:.82rem;line-height:1.5}
+code{font-size:.92em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card b{display:block;margin-bottom:4px}
+.note{color:var(--muted);font-size:.95rem}
+footer{margin-top:56px;color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+<h1>skill-checkup</h1>
+<p class="lede">Audit and lint the Agent Skills (<code>SKILL.md</code>) installed for Claude Code and Codex. Read-only, offline, no dependencies.</p>
+
+<pre><code>uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup</code></pre>
+<p class="note">No <code>uvx</code>? <code>pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup</code>. Python 3.10+. Source on <a href="https://github.com/majiayu000/skill-checkup">GitHub</a>.</p>
+
+<h2>What it finds</h2>
+<div class="grid">
+  <div class="card"><b>Broken skills</b>Links to nowhere, missing referenced files or commands, and same-name copies in <code>~/.claude/skills</code> and <code>~/.agents/skills</code> that drifted apart.</div>
+  <div class="card"><b>Competing descriptions</b>Skills so alike that they fight over the same requests.</div>
+  <div class="card"><b>Description gaps</b>Requests you keep typing that a skill's body handles but its description never mentions, so it never triggers.</div>
+  <div class="card"><b>One-sided skills</b>Loaded by both Claude Code and Codex, used by only one, with which copy is safe to delete.</div>
+</div>
+<p class="note">Built into Claude Code, <code>/skill-doctor</code> lists unused Claude Code skills and their token cost. skill-checkup covers what it doesn't, across both agents.</p>
+
+<h2>Example</h2>
+<p class="note">Summary for a fictional machine with 27 skills and both Claude Code and Codex logs.</p>
+<pre>| Area             | Count                          | Meaning                                                    |
+|------------------|--------------------------------|------------------------------------------------------------|
+| Broken           | 2 high-confidence, 4 in total  | skills that load but fail, or copies that disagree         |
+| Competing        | 1                              | skills whose descriptions fight over the same requests     |
+| Description gaps | 1                              | requests a skill's body handles but its description misses |
+| One-sided        | 3                              | loaded by both agents, used by only one                    |
+| Unused           | 14                             | no use in the window                                       |
+| Heavy            | none                           | the skill list fits the listing budget                     |
+
+- [ ] Fix `old-onboarding`: Won't load → remove the link or restore its target
+- [ ] Fix `deploy-preview`: Copies have diverged → keep one source, make the others identical
+- [ ] Add your own wording to the description of `pr-queue`: repeated requests (6) match its body, not its description
+- [ ] Consider merging `release-notes` / `changelog-writer`
+- [ ] Remove the Codex copy of `deploy-preview`: used 6× in Claude Code, never in Codex</pre>
+
+<h2>FAQ</h2>
+<h3>Why isn't my Claude Code skill triggering?</h3>
+<p>The agent decides from the skill's <code>description</code>. If the description doesn't mention what you ask for, the skill won't fire even when its body can do the job. skill-checkup finds repeated requests that match a skill's body but not its description, and <code>skill-checkup replay &lt;skill&gt; --description "..."</code> checks a rewording against your real requests.</p>
+<h3>How do I keep skills in sync between Claude Code and Codex?</h3>
+<p>Claude Code reads <code>~/.claude/skills</code>; Codex reads <code>~/.agents/skills</code>. Copies drift. skill-checkup reports same-name copies whose contents differ, links that point nowhere, and skills one agent loads but never uses, with whether deleting that copy is safe.</p>
+<h3>Is this the same as /skill-doctor?</h3>
+<p>No. Use <code>/skill-doctor</code> for unused Claude Code skills and their token cost. Use skill-checkup for broken and drifted skills, competing or incomplete descriptions, Codex, and skills used by only one agent.</p>
+<h3>Does it send my conversations anywhere?</h3>
+<p>No. It reads local session logs to count skill use, changes nothing and sends nothing. Your messages stay out of the report unless you pass <code>--show-examples</code>.</p>
+
+<h2>Accuracy</h2>
+<p>Findings were hand-checked against the author's machine (106 skills, 90 days of logs), 15 at a time: 3/15, then 7/15, then 14/15 after fixes. Details and limits are in the <a href="https://github.com/majiayu000/skill-checkup#accuracy">README</a>. False-positive reports are welcome as <a href="https://github.com/majiayu000/skill-checkup/issues">issues</a>.</p>
+
+<footer>MIT licensed · <a href="https://github.com/majiayu000/skill-checkup">github.com/majiayu000/skill-checkup</a> · Also available as a skill in <a href="https://github.com/majiayu000/spellbook">Spellbook</a></footer>
+</main>
+</body>
+</html>

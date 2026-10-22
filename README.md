@@ -2,7 +2,9 @@
 
 [![ci](https://github.com/majiayu000/skill-checkup/actions/workflows/ci.yml/badge.svg)](https://github.com/majiayu000/skill-checkup/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-`/skill-doctor` tells you which Claude Code skills you don't use. **skill-checkup tells you which skills are wrong, across Claude Code and Codex.**
+**Audit and lint the Agent Skills (`SKILL.md`) installed for Claude Code and Codex.** Find skills that are broken, drifted between `~/.claude/skills` and `~/.agents/skills`, competing with each other, never triggering, or used by only one agent.
+
+`/skill-doctor` tells you which Claude Code skills you don't use. skill-checkup tells you which skills are wrong, across Claude Code and Codex. · [Website](https://majiayu000.github.io/skill-checkup/)
 
 It reads your installed skill folders and your local Claude Code and Codex session logs, read-only, and reports:
 
@@ -55,6 +57,26 @@ git clone https://github.com/majiayu000/skill-checkup && cd skill-checkup
 python3 examples/demo/build_demo.py /tmp/skill-checkup-demo
 HOME=/tmp/skill-checkup-demo python3 -m skill_checkup --since 36500
 ```
+
+## FAQ
+
+**Why isn't my Claude Code skill triggering?**
+The agent decides from the skill's `description`. If the description doesn't mention what you actually ask for, the skill won't fire even when its body can do the job. skill-checkup finds requests you repeat that match a skill's body but not its description, and `skill-checkup replay <skill> --description "..."` checks a rewording against your real requests. It also flags skills whose descriptions compete for the same requests.
+
+**How do I keep skills in sync between Claude Code and Codex?**
+Claude Code reads `~/.claude/skills`; Codex reads `~/.agents/skills` (and `~/.codex/skills`). Copies in both places drift. skill-checkup reports same-name copies whose contents differ, links that point nowhere, and skills that one agent loads but never uses, with whether deleting that copy is safe.
+
+**Is this the same as `/skill-doctor`?**
+No. `/skill-doctor` (built into Claude Code) lists unused Claude Code skills with their token cost; use it for that. skill-checkup covers what it doesn't: broken and drifted skills, competing or incomplete descriptions, Codex, and skills used by only one agent.
+
+**Does it read or send my conversations?**
+It reads local Claude Code and Codex session logs to count which skills were used. Nothing leaves your machine, nothing is changed, and your messages are not quoted in the report unless you pass `--show-examples`.
+
+**Does it work for Cursor or Gemini CLI?**
+Skills in `~/.agents/skills` are checked for broken links, drifted copies and competing descriptions. Usage counts come only from Claude Code and Codex logs.
+
+**Does it validate the SKILL.md format?**
+It checks the frontmatter rules from the [Agent Skills spec](https://agentskills.io) (name, description, length) and that files and commands a skill references exist.
 
 ## Privacy
 
