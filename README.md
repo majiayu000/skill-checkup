@@ -18,10 +18,10 @@ It also lists skills unused in the window, repeated requests no skill covers, an
 An appendix lists *silent* skills, ones you seemed to ask for that did not fire. That signal is low-confidence (mentions and requests look alike), so it never feeds the summary or the actions.
 
 ```bash
-uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup
+uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.1 skill-checkup
 ```
 
-No `uvx`? Use `pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup`, or clone the repo and run `python3 -m skill_checkup`. Python 3.10+, no dependencies.
+No `uvx`? Use `pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.2.1 skill-checkup`, or clone the repo and run `python3 -m skill_checkup`. Python 3.10+, no dependencies.
 
 It prints a short summary and writes the full report to `./skill-checkup-report.md`. The first run reads up to 90 days of logs and may take a minute; later runs use a cache.
 
@@ -159,5 +159,5 @@ Round 3 leans on "Unused" (9 / 9), the most mechanical check; the heuristic sect
 只读、不联网；报告默认不包含你的原话，要看例句加 `--show-examples`；`--summary-json s.json --anonymize` 生成只有计数、skill 名已替换的摘要，可以放心发给别人。只用 Claude Code 的话，先跑 `/skill-doctor` 和 `/context`。
 
 ```bash
-uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup --lang zh
+uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.1 skill-checkup --lang zh
 ```

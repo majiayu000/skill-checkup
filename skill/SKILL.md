@@ -10,10 +10,10 @@ Run the read-only checkup and summarize it for the user.
 1. Run it from the user's current project so project-level skills are included:
 
    ```bash
-   uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup --out skill-checkup-report.md
+   uvx --from git+https://github.com/majiayu000/skill-checkup@v0.2.1 skill-checkup --out skill-checkup-report.md
    ```
 
-   If `uvx` is missing, use `pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.2.0 skill-checkup` instead.
+   If `uvx` is missing, use `pipx run --spec git+https://github.com/majiayu000/skill-checkup@v0.2.1 skill-checkup` instead.
 2. Show the user the summary it prints, then read `skill-checkup-report.md` and explain the top actions in plain words.
 3. Do not move, edit or delete any skill unless the user asks for that specific change. The tool itself never changes files.
 4. Only add `--show-examples` if the user wants to see which of their own requests were matched; those quotes stay on this machine.

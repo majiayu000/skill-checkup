@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skill-checkup"
-version = "0.2.0"
+version = "0.2.1"
 description = "Audit Agent Skills (SKILL.md) across Claude Code and Codex: broken, drifted, competing, never-triggering and one-sided skills."
 keywords = ["claude-code", "codex", "agent-skills", "skill-md", "skills", "lint", "audit", "anthropic", "openai", "ai-agents"]
 authors = [{ name = "majiayu000" }]
